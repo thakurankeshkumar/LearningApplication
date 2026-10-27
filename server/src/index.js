@@ -1,10 +1,9 @@
-
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
-
+import courseRoutes from "./routes/courses.js";
 import connectDB from "./config/db.js";
 import authRoutes from "./routes/auth.js";
 
@@ -19,11 +18,7 @@ app.disable("x-powered-by");
 
 app.use(helmet());
 
-app.use(
-    cors({
-        origin: process.env.CLIENT_ORIGIN || "http://localhost:5173",
-    })
-);
+app.use(cors({ origin: process.env.CLIENT_ORIGIN || "http://localhost:5173", }));
 
 app.use(express.json({ limit: "10kb" }));
 
@@ -34,19 +29,17 @@ app.get("/api/health", (req, res) => {
     });
 });
 
-app.use(
-    "/api/auth",
-    rateLimit({
-        windowMs: 15 * 60 * 1000,
-        limit: 20,
-        standardHeaders: "draft-7",
-        legacyHeaders: false,
-        message: {
-            message: "Too many authentication requests. Please try again later.",
-        },
-    }),
-    authRoutes
-);
+app.use("/api/auth", rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 20,
+    standardHeaders: "draft-7",
+    legacyHeaders: false,
+    message: {
+        message: "Too many authentication requests. Please try again later.",
+    },
+}), authRoutes);
+
+app.use("/api/courses", courseRoutes);
 
 app.use((req, res) => {
     res.status(404).json({
