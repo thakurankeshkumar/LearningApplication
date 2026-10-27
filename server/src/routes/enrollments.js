@@ -6,6 +6,8 @@ import Course from "../models/Course.js";
 import Lesson from "../models/Lesson.js";
 import Enrollment from "../models/Enrollment.js";
 import { protect } from "../middleware/auth.js";
+import Quiz from "../models/Quiz.js";
+import QuizAttempt from "../models/QuizAttempt.js";
 
 const router = Router();
 
@@ -124,18 +126,13 @@ router.get("/enrollments/my", protect, async (req, res, next) => {
 
 // POST /api/enrollments/:enrollmentId/lessons/:lessonId/complete
 // Mark a lesson as completed.
+
 router.post(
     "/enrollments/:enrollmentId/lessons/:lessonId/complete",
     protect,
-    async (req, res, next) => {
+    async (req, res) => {
         try {
             const { enrollmentId, lessonId } = req.params;
-
-            if (!validId(enrollmentId) || !validId(lessonId)) {
-                return res.status(400).json({
-                    message: "Invalid enrollment or lesson ID",
-                });
-            }
 
             const enrollment = await Enrollment.findOne({
                 _id: enrollmentId,
@@ -144,7 +141,7 @@ router.post(
 
             if (!enrollment) {
                 return res.status(404).json({
-                    message: "Enrollment not found",
+                    message: "Enrollment not found.",
                 });
             }
 
@@ -155,40 +152,61 @@ router.post(
 
             if (!lesson) {
                 return res.status(404).json({
-                    message: "Lesson not found in this course",
+                    message: "Lesson not found in this course.",
                 });
             }
 
-            const alreadyCompleted = enrollment.completedLessons.some(
-                (id) => id.toString() === lessonId
+            const quiz = await Quiz.findOne({ lesson: lesson._id });
+
+            if (quiz) {
+                const passedAttempt = await QuizAttempt.exists({
+                    student: req.user._id,
+                    quiz: quiz._id,
+                    passed: true,
+                });
+
+                if (!passedAttempt) {
+                    return res.status(403).json({
+                        message:
+                            "Pass this lesson's quiz before marking the lesson complete.",
+                    });
+                }
+            }
+
+            await Enrollment.updateOne(
+                { _id: enrollment._id },
+                { $addToSet: { completedLessons: lesson._id } }
             );
 
-            if (!alreadyCompleted) {
-                enrollment.completedLessons.push(lesson._id);
-                await enrollment.save();
-            }
+            const updatedEnrollment = await Enrollment.findById(
+                enrollment._id
+            ).populate("completedLessons", "title order");
 
             const totalLessons = await Lesson.countDocuments({
                 course: enrollment.course,
             });
 
-            const completedLessons = enrollment.completedLessons.length;
-
-            res.status(200).json({
-                message: "Lesson marked as completed",
-                progress: {
-                    totalLessons,
-                    completedLessons,
-                    percentage:
-                        totalLessons === 0
-                            ? 0
-                            : Math.round((completedLessons / totalLessons) * 100),
-                },
+            return res.status(200).json({
+                message: "Lesson marked as complete.",
+                completedLessons: updatedEnrollment.completedLessons,
+                progress:
+                    totalLessons === 0
+                        ? 0
+                        : Math.round(
+                            (updatedEnrollment.completedLessons.length /
+                                totalLessons) *
+                            100
+                        ),
             });
         } catch (error) {
-            next(error);
+            console.error("Complete lesson error:", error.message);
+
+            return res.status(500).json({
+                message: "Unable to complete lesson.",
+            });
         }
     }
 );
+
 
 export default router;
